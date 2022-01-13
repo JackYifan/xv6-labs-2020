@@ -316,6 +316,25 @@ sys_open(void)
     }
   }
 
+  int cnt = 0; //引用次数
+  while(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)){
+    //将inode中的内容读到path中
+    if(readi(ip,0,(uint64)path,0,MAXPATH) != MAXPATH){
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+    iunlockput(ip);
+    //根据path找到inode
+    if((ip = namei(path))==0 || ++cnt > 10){
+      //指向为空或引用达到上限
+      end_op();
+      return -1;
+    }
+    ilock(ip); //如果inode在disk中则加载到内存,读入内存后加锁防止其他线程修改，保持和disk一致
+  }
+
+
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
     iunlockput(ip);
     end_op();
@@ -482,5 +501,31 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+uint64
+sys_symlink(void)
+{
+  char target[MAXPATH], path[MAXPATH]; //参数
+  if(argstr(0,target,MAXPATH) < 0 || argstr(1,path,MAXPATH) < 0){
+    return -1;
+  }
+
+  begin_op(); //lock
+  struct inode* ip;
+  if((ip = create(path,T_SYMLINK,0,0))==0){
+    end_op();
+    return -1;
+  }
+  // 将目标的路径写入软连接的inode,target类型是char* 存储的是拷贝开始的地址，转为uint64类型地址
+  if(writei(ip,0,(uint64)target,0,MAXPATH) != MAXPATH){
+    end_op();
+    return -1;
+  }
+
+  iupdate(ip); //将更新完的inode拷贝到disk
+  iunlockput(ip); //解锁并回收inode空间
+  end_op();
   return 0;
 }
