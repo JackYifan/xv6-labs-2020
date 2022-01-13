@@ -386,20 +386,44 @@ bmap(struct inode *ip, uint bn)
     return addr;
   }
   bn -= NDIRECT;
-
+  
   if(bn < NINDIRECT){
     // Load indirect block, allocating if necessary.
     if((addr = ip->addrs[NDIRECT]) == 0)
       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
-    bp = bread(ip->dev, addr);
-    a = (uint*)bp->data;
-    if((addr = a[bn]) == 0){
+    bp = bread(ip->dev, addr); //将磁盘上的一个block读入内存
+    a = (uint*)bp->data; //读入内存的数据
+    if((addr = a[bn]) == 0){    //a[bn]为一级索引的真实地址
       a[bn] = addr = balloc(ip->dev);
       log_write(bp);
     }
     brelse(bp);
     return addr;
   }
+
+  //定义新的映射关系
+  bn -= NINDIRECT;
+  if(bn < NINDIRECT2){
+    // Load the first indirect2 block, allocating if necessary.
+    if((addr = ip->addrs[NDIRECT+1]) == 0)
+      ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
+    bp = bread(ip->dev, addr); //将磁盘上的一个block读入内存
+    a = (uint*)bp->data; //读入内存的block是二级索引
+    if((addr = a[bn / NINDIRECT]) == 0){    //在二级索引中找到一级索引的block地址
+      a[bn / NINDIRECT] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    bp = bread(ip->dev,addr); //读入一级索引的block
+    a = (uint*)bp->data; 
+    if((addr = a[bn % NINDIRECT]) == 0){
+      a[bn % NINDIRECT] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    return addr;
+  }
+
 
   panic("bmap: out of range");
 }
@@ -432,8 +456,35 @@ itrunc(struct inode *ip)
     ip->addrs[NDIRECT] = 0;
   }
 
+  // 释放二级索引的空间
+  if(ip->addrs[NDIRECT+1]){
+    bp = bread(ip->dev, ip->addrs[NDIRECT+1]);
+    a = (uint*)bp->data;
+    for(j = 0; j < NINDIRECT; j++){
+      //遍历所有存在的一级索引地址
+      if(a[j]){
+        //读入一级索引
+        struct buf* bp2 = bread(ip->dev,a[j]);
+        //删除所有一级索引中的地址指向的空间
+        uint* a2 = (uint*) bp2->data;
+        for(int k=0;k<NINDIRECT;k++){
+          if(a2[k]){
+            bfree(ip->dev,a2[k]);
+          }
+        }
+        //一级索引中包含的所以地址已释放，将其自己的空间释放
+        brelse(bp2);
+        bfree(ip->dev,a[j]);
+        a[j] = 0; 
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT+1]);
+    ip->addrs[NDIRECT+1] = 0;
+  }
+
   ip->size = 0;
-  iupdate(ip);
+  iupdate(ip); //将修改过的inode写回硬盘
 }
 
 // Copy stat information from inode.
