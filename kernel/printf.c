@@ -122,6 +122,7 @@ panic(char *s)
   printf(s);
   printf("\n");
   panicked = 1; // freeze uart output from other CPUs
+  backtrace();
   for(;;)
     ;
 }
@@ -131,4 +132,16 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+
+void            
+backtrace(void)
+{
+  printf("backtrace:\n");
+  uint64 fp = r_fp();
+  uint64 lim = PGROUNDUP(fp); //栈底地址，一个栈大小为4kiB
+  for(;fp < lim;fp = *((uint64*)(fp-16))){
+    printf("%p\n",*((uint64*)(fp-8)));
+  }
 }
