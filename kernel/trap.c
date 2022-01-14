@@ -77,9 +77,23 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
-    yield();
-
+  if(which_dev == 2){
+    if(p->ticks == 0){
+      yield();
+    }
+    p->remain_ticks--;
+    if(p->remain_ticks == 0 && p->trapframe_backup == 0){
+      p->remain_ticks = p->ticks;
+      p->trapframe_backup = (struct trapframe*)kalloc();
+      memmove(p->trapframe_backup,p->trapframe,PGSIZE);
+      p->trapframe->epc = p->handler; // saved user program counter
+    }
+  }
+    
+  /*
+  * set S Exception Program Counter to the saved user pc.
+  * w_sepc(p->trapframe->epc); //回到用户态
+  */
   usertrapret();
 }
 

@@ -96,3 +96,39 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_sigalarm(void)
+{
+  int ticks;
+  uint64 handler;
+  //获取参数,从寄存器中读取
+  if(argint(0,&ticks)<0){
+    return -1;
+  }
+  if(argaddr(1,&handler)<0){
+    return -1;
+  }
+  struct proc* p = myproc();
+  //原子性操作,初始化proc的alarm相关参数
+  acquire(&p->lock);
+  p->ticks = ticks;
+  p->handler = handler;
+  p->remain_ticks = ticks;
+  release(&p->lock);
+  return 0;
+}
+
+uint64 sys_sigreturn(void)
+{
+  struct proc* p = myproc();
+  acquire(&p->lock);
+  if(p->trapframe_backup){
+    memmove(p->trapframe,p->trapframe_backup,PGSIZE);
+    kfree(p->trapframe_backup);
+    p->trapframe_backup = 0;
+  }
+
+  release(&p->lock);
+  return 0;
+}
