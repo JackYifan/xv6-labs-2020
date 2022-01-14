@@ -10,11 +10,29 @@
 #define STACK_SIZE  8192
 #define MAX_THREAD  4
 
+struct context {
+  uint64 ra;
+  uint64 sp;
+
+  // callee-saved
+  uint64 s0;
+  uint64 s1;
+  uint64 s2;
+  uint64 s3;
+  uint64 s4;
+  uint64 s5;
+  uint64 s6;
+  uint64 s7;
+  uint64 s8;
+  uint64 s9;
+  uint64 s10;
+  uint64 s11;
+};
 
 struct thread {
   char       stack[STACK_SIZE]; /* the thread's stack */
   int        state;             /* FREE, RUNNING, RUNNABLE */
-
+  struct context context;       /* thread context */
 };
 struct thread all_thread[MAX_THREAD];
 struct thread *current_thread;
@@ -57,12 +75,14 @@ thread_schedule(void)
 
   if (current_thread != next_thread) {         /* switch threads?  */
     next_thread->state = RUNNING;
-    t = current_thread;
-    current_thread = next_thread;
+    t = current_thread; //t is old context
+    current_thread = next_thread; 
     /* YOUR CODE HERE
      * Invoke thread_switch to switch from t to next_thread:
      * thread_switch(??, ??);
      */
+    thread_switch((uint64)&t->context,(uint64)&next_thread->context);
+
   } else
     next_thread = 0;
 }
@@ -75,8 +95,10 @@ thread_create(void (*func)())
   for (t = all_thread; t < all_thread + MAX_THREAD; t++) {
     if (t->state == FREE) break;
   }
-  t->state = RUNNABLE;
+  t->state = RUNNABLE; //all_thread为线程池，在线程池中找到FREE的线程用来创建新线程
   // YOUR CODE HERE
+  t->context.ra = (uint64)func; //return address线程调度执行时的函数地址
+  t->context.sp = (uint64)t->stack + STACK_SIZE -1; //sp栈顶
 }
 
 void 
